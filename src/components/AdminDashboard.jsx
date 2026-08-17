@@ -23,9 +23,9 @@ import {
   getProducts,
   saveProduct,
   deleteProduct,
-  getStories,
-  saveStory,
-  deleteStory,
+  getSlides,
+  saveSlide,
+  deleteSlide,
   getOrders,
   updateOrderStatus,
   getStoreSettings,
@@ -77,11 +77,11 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const [pinChangeMsg, setPinChangeMsg] = useState('');
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('products'); // 'products' | 'stories' | 'orders' | 'settings'
+  const [activeTab, setActiveTab] = useState('products'); // 'products' | 'slides' | 'orders' | 'settings'
 
   // Data States
   const [products, setProducts] = useState([]);
-  const [stories, setStories] = useState([]);
+  const [slides, setSlides] = useState([]);
   const [orders, setOrders] = useState([]);
   const [storeSettings, setStoreSettings] = useState({});
   const [isLoading, setIsLoading] = useState(false);
@@ -91,9 +91,9 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [isEditingNew, setIsEditingNew] = useState(false);
 
-  // Editing Story State
-  const [editingStory, setEditingStory] = useState(null);
-  const [isEditingNewStory, setIsEditingNewStory] = useState(false);
+  // Editing Slide State
+  const [editingSlide, setEditingSlide] = useState(null);
+  const [isEditingNewSlide, setIsEditingNewSlide] = useState(false);
 
   // Initial Load
   useEffect(() => {
@@ -107,12 +107,12 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
     try {
       const [p, s, o, settings] = await Promise.all([
         getProducts(),
-        getStories(),
+        getSlides(),
         getOrders(),
         getStoreSettings()
       ]);
       setProducts(p || []);
-      setStories(s || []);
+      setSlides(s || []);
       setOrders(o || []);
       setStoreSettings(settings || {});
     } catch (e) {
@@ -436,35 +436,33 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   };
 
   // -------------------------------------------------------------
-  // STORIES & REELS HANDLERS
+  // HERO SLIDER SLIDES HANDLERS
   // -------------------------------------------------------------
-  const handleStartAddStory = () => {
-    setEditingStory({
-      id: `story-${Date.now()}`,
-      title_ar: '',
-      title_fr: '',
-      title_en: '',
+  const handleStartAddSlide = () => {
+    setEditingSlide({
+      id: `slide-${Date.now()}`,
       media_url: '',
       media_type: 'image',
-      tagged_product_id: '',
+      duration: 5,
       is_active: true
     });
-    setIsEditingNewStory(true);
+    setIsEditingNewSlide(true);
   };
 
-  const handleUploadStoryMedia = async (e) => {
+  const handleUploadSlideMedia = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsLoading(true);
     try {
-      const result = await uploadMedia(file, 'shemsou_stories');
-      setEditingStory((prev) => ({
+      const result = await uploadMedia(file, 'shemsou_slides');
+      setEditingSlide((prev) => ({
         ...prev,
         media_url: result.url,
+        cloudinary_public_id: result.public_id,
         media_type: result.resource_type === 'video' ? 'video' : 'image'
       }));
-      showToast('تم رفع وسائط القصة بنجاح!');
+      showToast('✅ تم رفع الوسائط بنجاح!');
     } catch (err) {
       alert(err.message);
     } finally {
@@ -473,18 +471,23 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
     }
   };
 
-  const handleSaveStory = async () => {
-    if (!editingStory.media_url) {
-      alert('يرجى رفع أو وضع رابط صورة/فيديو للقصة');
+  const handleSaveSlide = async () => {
+    if (!editingSlide.media_url) {
+      alert('يرجى رفع صورة أو فيديو أولاً');
+      return;
+    }
+    const dur = Number(editingSlide.duration);
+    if (isNaN(dur) || dur < 2) {
+      alert('مدة العرض يجب أن تكون 2 ثانية أو أكثر');
       return;
     }
 
     setIsLoading(true);
     try {
-      await saveStory(editingStory);
+      await saveSlide({ ...editingSlide, duration: dur });
       await loadAllData();
-      setEditingStory(null);
-      showToast('تم حفظ القصة بنجاح!');
+      setEditingSlide(null);
+      showToast('✅ تم حفظ الشريحة بنجاح!');
       if (onDataUpdated) onDataUpdated();
     } catch (e) {
       alert(e.message);
@@ -493,19 +496,19 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
     }
   };
 
-  const handleDeleteStory = async (storyId) => {
-    if (!window.confirm(t.confirmDelete)) return;
+  const handleDeleteSlide = async (slideId) => {
+    if (!window.confirm('هل أنت متأكد من حذف هذه الشريحة؟ سيتم حذف الوسائط من Cloudinary نهائياً.')) return;
 
-    const story = stories.find((s) => s.id === storyId);
+    const slide = slides.find((s) => s.id === slideId);
 
     setIsLoading(true);
     try {
-      if (story && story.media_url) {
-        await deleteMediaFromCloudinary(story.media_url, story.media_type);
+      if (slide && slide.media_url) {
+        await deleteMediaFromCloudinary(slide.media_url, slide.media_type);
       }
-      await deleteStory(storyId);
+      await deleteSlide(slideId);
       await loadAllData();
-      showToast('تم حذف القصة وتنظيف الميديا بنجاح');
+      showToast('✅ تم حذف الشريحة وتنظيف الوسائط بنجاح');
       if (onDataUpdated) onDataUpdated();
     } catch (e) {
       alert(e.message);
@@ -710,15 +713,15 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
 
           <button
             type="button"
-            className={`admin-tab-btn ${activeTab === 'stories' ? 'active' : ''}`}
+            className={`admin-tab-btn ${activeTab === 'slides' ? 'active' : ''}`}
             onClick={() => {
-              setActiveTab('stories');
-              setEditingStory(null);
+              setActiveTab('slides');
+              setEditingSlide(null);
             }}
           >
             <Video size={16} />
             <span>
-              {t.tabStories} ({stories.length})
+              شريط الصور ({slides.length})
             </span>
           </button>
 
@@ -1185,137 +1188,227 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
           )}
 
           {/* ========================================================= */}
-          {/* TAB 2: STORIES & REELS                                    */}
+          {/* TAB 2: HERO SLIDER SLIDES                                 */}
           {/* ========================================================= */}
-          {activeTab === 'stories' && (
+          {activeTab === 'slides' && (
             <div>
-              {editingStory ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <h3 style={{ fontSize: '1.2rem', color: 'var(--gold-light)' }}>
-                    إضافة قصة / فيديو ريلز جديد
-                  </h3>
-
-                  <div className="form-group">
-                    <label className="form-label">عنوان القصة (بالعربية)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={editingStory.title_ar}
-                      onChange={(e) => setEditingStory({ ...editingStory, title_ar: e.target.value })}
-                    />
+              {editingSlide ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '1.2rem', color: 'var(--gold-light)' }}>
+                      ✦ إضافة شريحة جديدة لشريط التمرير
+                    </h3>
+                    <button type="button" className="btn-luxury-outline" onClick={() => setEditingSlide(null)}>
+                      {t.close}
+                    </button>
                   </div>
 
-                  <div className="form-group">
-                    <label className="form-label">المنتج المرتبط بالشراء المباشر</label>
-                    <select
-                      className="form-input"
-                      value={editingStory.tagged_product_id || ''}
-                      onChange={(e) => setEditingStory({ ...editingStory, tagged_product_id: e.target.value })}
-                    >
-                      <option value="">-- بدون منتج محدد --</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title_ar} ({p.price} {t.currency})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1rem', borderRadius: '10px' }}>
-                    <label className="form-label">رفع فيديو قصير أو صورة للقصة (Cloudinary)</label>
+                  {/* Upload Area */}
+                  <div style={{ background: 'rgba(212,175,55,0.05)', border: '1.5px dashed rgba(212,175,55,0.3)', padding: '1.5rem', borderRadius: '14px', textAlign: 'center' }}>
+                    <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block', fontSize: '0.9rem' }}>
+                      📸 رفع صورة أو فيديو (يتم الرفع تلقائياً إلى Cloudinary)
+                    </label>
                     <input
                       type="file"
+                      id="slide-upload-input"
                       accept="image/*,video/*"
-                      onChange={handleUploadStoryMedia}
-                      style={{ marginTop: '0.5rem' }}
+                      onChange={handleUploadSlideMedia}
+                      style={{ display: 'none' }}
                     />
-                    {editingStory.media_url && (
-                      <div style={{ marginTop: '0.75rem', width: '120px', height: '180px', borderRadius: '8px', overflow: 'hidden' }}>
-                        {editingStory.media_type === 'video' ? (
-                          <video src={editingStory.media_url} autoPlay loop muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <label
+                      htmlFor="slide-upload-input"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        cursor: 'pointer',
+                        background: 'rgba(212,175,55,0.12)',
+                        border: '1px solid rgba(212,175,55,0.4)',
+                        color: 'var(--gold-light)',
+                        padding: '0.6rem 1.4rem',
+                        borderRadius: '8px',
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Upload size={16} />
+                      اختر صورة أو فيديو
+                    </label>
+
+                    {editingSlide.media_url && (
+                      <div style={{ marginTop: '1rem', position: 'relative', borderRadius: '10px', overflow: 'hidden', maxHeight: '200px' }}>
+                        {editingSlide.media_type === 'video' ? (
+                          <video
+                            src={editingSlide.media_url}
+                            controls
+                            muted
+                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px' }}
+                          />
                         ) : (
-                          <img src={editingStory.media_url} alt="Story" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <img
+                            src={editingSlide.media_url}
+                            alt="Slide preview"
+                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px' }}
+                          />
                         )}
+                        <div style={{
+                          position: 'absolute', bottom: '8px', left: '8px',
+                          background: 'rgba(0,0,0,0.7)', color: '#fff',
+                          fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px'
+                        }}>
+                          ✅ {editingSlide.media_type === 'video' ? 'فيديو جاهز' : 'صورة جاهزة'}
+                        </div>
                       </div>
                     )}
                   </div>
 
+                  {/* Duration Setting */}
+                  <div className="form-group">
+                    <label className="form-label">
+                      ⏱ مدة عرض الشريحة (بالثواني) — الحد الأدنى: 2 ثانية
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <input
+                        type="range"
+                        min="2"
+                        max="30"
+                        step="1"
+                        value={editingSlide.duration || 5}
+                        onChange={(e) => setEditingSlide({ ...editingSlide, duration: Number(e.target.value) })}
+                        style={{ flex: 1, accentColor: 'var(--gold-pure)', height: '6px' }}
+                      />
+                      <div style={{
+                        minWidth: '60px',
+                        textAlign: 'center',
+                        background: 'rgba(212,175,55,0.15)',
+                        border: '1px solid var(--gold-dim)',
+                        color: 'var(--gold-light)',
+                        padding: '0.4rem 0.8rem',
+                        borderRadius: '8px',
+                        fontWeight: '700',
+                        fontSize: '1rem'
+                      }}>
+                        {editingSlide.duration || 5}s
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn-luxury-outline" onClick={() => setEditingStory(null)}>
-                      {t.close}
+                    <button type="button" className="btn-luxury-outline" onClick={() => setEditingSlide(null)}>
+                      إلغاء
                     </button>
-                    <button type="button" className="btn-luxury" onClick={handleSaveStory}>
+                    <button type="button" className="btn-luxury" onClick={handleSaveSlide} disabled={isLoading}>
                       <Save size={16} />
-                      <span>حفظ القصة</span>
+                      <span>{isLoading ? 'جارٍ الحفظ...' : 'حفظ الشريحة'}</span>
                     </button>
                   </div>
                 </div>
               ) : (
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h3 style={{ fontSize: '1.2rem', color: 'var(--beige-silk)' }}>
-                      شريط القصص والريلز المعروضة ({stories.length})
-                    </h3>
-                    <button type="button" className="btn-luxury" onClick={handleStartAddStory}>
+                    <div>
+                      <h3 style={{ fontSize: '1.2rem', color: 'var(--beige-silk)', marginBottom: '0.25rem' }}>
+                        🖼 شريط التمرير ({slides.length} شريحة)
+                      </h3>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        الشرائح تظهر في أعلى الموقع وتتمرر تلقائياً حسب المدة المحددة
+                      </p>
+                    </div>
+                    <button type="button" className="btn-luxury" onClick={handleStartAddSlide}>
                       <Plus size={16} />
-                      <span>إضافة قصة / فيديو</span>
+                      <span>إضافة شريحة</span>
                     </button>
                   </div>
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.25rem' }}>
-                    {stories.map((s) => (
+                  {slides.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', border: '1.5px dashed rgba(255,255,255,0.1)', borderRadius: '14px' }}>
+                      <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🖼</div>
+                      <div>لا توجد شرائح بعد. أضف أول شريحة لشريط التمرير!</div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1.25rem' }}>
+                    {slides.map((s, idx) => (
                       <div
                         key={s.id}
                         style={{
-                          width: '180px',
                           background: 'var(--bg-card)',
-                          borderRadius: '12px',
+                          borderRadius: '14px',
                           overflow: 'hidden',
-                          border: '1px solid rgba(255,255,255,0.08)'
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          transition: 'transform 0.2s, box-shadow 0.2s',
+                          position: 'relative'
                         }}
                       >
-                        <div style={{ height: '220px', position: 'relative' }}>
+                        {/* Media Preview */}
+                        <div style={{ height: '140px', position: 'relative', overflow: 'hidden' }}>
                           {s.media_type === 'video' ? (
-                            <video src={s.media_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <video
+                              src={s.media_url}
+                              muted
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
                           ) : (
-                            <img src={s.media_url} alt={s.title_ar} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img
+                              src={s.media_url}
+                              alt={`Slide ${idx + 1}`}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
                           )}
-                          <span
-                            style={{
-                              position: 'absolute',
-                              top: '8px',
-                              right: '8px',
-                              background: 'var(--gold-pure)',
-                              color: '#000',
-                              fontSize: '0.65rem',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              fontWeight: '700'
-                            }}
-                          >
-                            {s.media_type === 'video' ? 'فيديو' : 'صورة'}
+                          {/* Type Badge */}
+                          <span style={{
+                            position: 'absolute', top: '8px', right: '8px',
+                            background: s.media_type === 'video' ? 'rgba(231,76,60,0.85)' : 'rgba(39,174,96,0.85)',
+                            color: '#fff', fontSize: '0.65rem',
+                            padding: '2px 7px', borderRadius: '5px', fontWeight: '700'
+                          }}>
+                            {s.media_type === 'video' ? '▶ فيديو' : '📷 صورة'}
+                          </span>
+                          {/* Order badge */}
+                          <span style={{
+                            position: 'absolute', top: '8px', left: '8px',
+                            background: 'rgba(0,0,0,0.65)',
+                            color: 'var(--gold-pure)', fontSize: '0.7rem',
+                            padding: '2px 7px', borderRadius: '5px', fontWeight: '700'
+                          }}>
+                            #{idx + 1}
                           </span>
                         </div>
 
-                        <div style={{ padding: '0.75rem' }}>
-                          <div style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--beige-silk)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {s.title_ar || 'قصة البوتيك'}
+                        {/* Info + Actions */}
+                        <div style={{ padding: '0.85rem' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>مدة العرض</span>
+                            <span style={{
+                              background: 'rgba(212,175,55,0.12)',
+                              border: '1px solid rgba(212,175,55,0.3)',
+                              color: 'var(--gold-light)',
+                              padding: '2px 10px', borderRadius: '6px',
+                              fontSize: '0.8rem', fontWeight: '700'
+                            }}>
+                              ⏱ {s.duration || 5}s
+                            </span>
                           </div>
+
                           <button
                             type="button"
                             style={{
-                              marginTop: '0.5rem',
                               width: '100%',
-                              background: 'rgba(231, 76, 60, 0.15)',
-                              border: '1px solid rgba(231, 76, 60, 0.4)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem',
+                              background: 'rgba(231, 76, 60, 0.1)',
+                              border: '1px solid rgba(231, 76, 60, 0.35)',
                               color: '#E74C3C',
-                              padding: '0.35rem',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              cursor: 'pointer'
+                              padding: '0.45rem 0',
+                              borderRadius: '8px',
+                              fontSize: '0.78rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
                             }}
-                            onClick={() => handleDeleteStory(s.id)}
+                            onClick={() => handleDeleteSlide(s.id)}
                           >
+                            <Trash2 size={13} />
                             حذف وتنظيف
                           </button>
                         </div>

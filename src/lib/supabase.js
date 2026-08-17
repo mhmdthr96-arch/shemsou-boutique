@@ -229,9 +229,11 @@ export async function getCategories() {
 }
 
 /**
- * Load Stories / Reels
+ * ⚜️ Load Hero Slider Slides
  */
-export async function getStories() {
+const LOCAL_SLIDES_KEY = 'shemsou_local_slides';
+
+export async function getSlides() {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -240,77 +242,75 @@ export async function getStories() {
         .select('*')
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
-      if (!error && data && data.length > 0) return data;
+      if (!error && data) return data;
     } catch (e) {
-      console.warn('Supabase stories error', e);
+      console.warn('Supabase slides error', e);
     }
   }
 
   try {
-    const local = localStorage.getItem(LOCAL_STORIES_KEY);
+    const local = localStorage.getItem(LOCAL_SLIDES_KEY);
     if (local) return JSON.parse(local);
   } catch (e) {
     console.error(e);
   }
-
-  localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(INITIAL_STORIES));
-  return INITIAL_STORIES;
+  return [];
 }
 
 /**
- * Save Story
+ * Save Slide
  */
-export async function saveStory(story) {
+export async function saveSlide(slide) {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const { data, error } = await supabase.from('stories').upsert([story]).select();
+      const { data, error } = await supabase.from('stories').upsert([slide]).select();
       if (!error && data) {
-        updateLocalStory(story);
+        updateLocalSlide(slide);
         return data[0];
       }
     } catch (e) {
       console.warn(e);
     }
   }
-  return updateLocalStory(story);
+  return updateLocalSlide(slide);
 }
 
-function updateLocalStory(story) {
-  let stories = [];
+function updateLocalSlide(slide) {
+  let slides = [];
   try {
-    const local = localStorage.getItem(LOCAL_STORIES_KEY);
-    stories = local ? JSON.parse(local) : [...INITIAL_STORIES];
+    const local = localStorage.getItem(LOCAL_SLIDES_KEY);
+    slides = local ? JSON.parse(local) : [];
   } catch {
-    stories = [...INITIAL_STORIES];
+    slides = [];
   }
 
-  const idx = stories.findIndex(s => s.id === story.id);
-  if (idx >= 0) stories[idx] = story;
-  else stories.unshift(story);
+  const idx = slides.findIndex(s => s.id === slide.id);
+  if (idx >= 0) slides[idx] = slide;
+  else slides.push(slide);
 
-  localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(stories));
-  return story;
+  localStorage.setItem(LOCAL_SLIDES_KEY, JSON.stringify(slides));
+  return slide;
 }
 
 /**
- * Delete Story (Manual Admin Action)
+ * Delete Slide (Manual Admin Action — also cleans Cloudinary via caller)
  */
-export async function deleteStory(storyId) {
+export async function deleteSlide(slideId) {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      await supabase.from('stories').delete().eq('id', storyId);
+      await supabase.from('stories').delete().eq('id', slideId);
     } catch (e) {
       console.warn(e);
     }
   }
 
   try {
-    const local = localStorage.getItem(LOCAL_STORIES_KEY);
+    const local = localStorage.getItem(LOCAL_SLIDES_KEY);
     if (local) {
-      const stories = JSON.parse(local).filter(s => s.id !== storyId);
-      localStorage.setItem(LOCAL_STORIES_KEY, JSON.stringify(stories));
+      const slides = JSON.parse(local).filter(s => s.id !== slideId);
+      localStorage.setItem(LOCAL_SLIDES_KEY, JSON.stringify(slides));
     }
   } catch (e) {
     console.error(e);

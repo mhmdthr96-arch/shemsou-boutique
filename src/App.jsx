@@ -2,9 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import AnnouncementBar from './components/AnnouncementBar';
 import Header from './components/Header';
-import StoryReel from './components/StoryReel';
-import StoryViewerModal from './components/StoryViewerModal';
-import HeroBanner from './components/HeroBanner';
+import HeroSlider from './components/HeroSlider';
 import CategoryNav from './components/CategoryNav';
 import SearchAndFilters from './components/SearchAndFilters';
 import ProductGrid from './components/ProductGrid';
@@ -14,7 +12,7 @@ import Footer from './components/Footer';
 import {
   getProducts,
   getCategories,
-  getStories,
+  getSlides,
   getStoreSettings
 } from './lib/supabase';
 
@@ -24,7 +22,7 @@ function StorefrontContent() {
   // Core Data
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [stories, setStories] = useState([]);
+  const [slides, setSlides] = useState([]);
   const [storeSettings, setStoreSettings] = useState({});
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,21 +33,20 @@ function StorefrontContent() {
 
   // Modals
   const [activeOrderProduct, setActiveOrderProduct] = useState(null);
-  const [activeStoryIndex, setActiveStoryIndex] = useState(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
   // Load Data on Mount
   const loadData = async () => {
     try {
-      const [prods, cats, stors, settings] = await Promise.all([
+      const [prods, cats, slds, settings] = await Promise.all([
         getProducts(),
         getCategories(),
-        getStories(),
+        getSlides(),
         getStoreSettings()
       ]);
       setProducts(prods || []);
       setCategories(cats || []);
-      setStories(stors || []);
+      setSlides(slds || []);
       setStoreSettings(settings || {});
     } catch (err) {
       console.error('Failed to load store data', err);
@@ -66,12 +63,9 @@ function StorefrontContent() {
   const filteredProducts = useMemo(() => {
     return products
       .filter((p) => {
-        // Category filter
         if (selectedCategory !== 'all' && p.category_id !== selectedCategory) {
           return false;
         }
-
-        // Search term filter
         if (searchTerm.trim()) {
           const q = searchTerm.toLowerCase();
           const matchTitleAr = (p.title_ar || '').toLowerCase().includes(q);
@@ -82,14 +76,12 @@ function StorefrontContent() {
             return false;
           }
         }
-
         return true;
       })
       .sort((a, b) => {
         if (sortBy === 'price-asc') return Number(a.price) - Number(b.price);
         if (sortBy === 'price-desc') return Number(b.price) - Number(a.price);
         if (sortBy === 'newest') return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-        // Default: featured first
         return (b.is_featured ? 1 : 0) - (a.is_featured ? 1 : 0);
       });
   }, [products, selectedCategory, searchTerm, sortBy]);
@@ -110,6 +102,9 @@ function StorefrontContent() {
 
   return (
     <div className="store-wrapper">
+      {/* ⚜️ Hero Slider — Top of page, first thing the visitor sees */}
+      <HeroSlider slides={slides} />
+
       {/* Top Announcement Bar */}
       <AnnouncementBar storeSettings={storeSettings} />
 
@@ -117,20 +112,6 @@ function StorefrontContent() {
       <Header
         onOpenAdmin={() => setIsAdminOpen(true)}
         onSearchClick={handleSearchFocus}
-      />
-
-      {/* Connected Admin Stories & Reels Bar */}
-      <StoryReel
-        stories={stories}
-        onSelectStory={(index) => setActiveStoryIndex(index)}
-      />
-
-      {/* Hero Welcome Banner */}
-      <HeroBanner
-        onExploreClick={() => {
-          const el = document.getElementById('main-catalog');
-          if (el) el.scrollIntoView({ behavior: 'smooth' });
-        }}
       />
 
       {/* Categories & Search Controls */}
@@ -172,21 +153,7 @@ function StorefrontContent() {
           storeSettings={storeSettings}
           onClose={() => setActiveOrderProduct(null)}
           onOrderSuccess={() => {
-            loadData(); // Reload stock counters
-          }}
-        />
-      )}
-
-      {/* Cinematic Fullscreen Story Viewer */}
-      {activeStoryIndex !== null && (
-        <StoryViewerModal
-          stories={stories}
-          initialIndex={activeStoryIndex}
-          products={products}
-          onClose={() => setActiveStoryIndex(null)}
-          onOpenProductOrder={(product) => {
-            setActiveStoryIndex(null);
-            setActiveOrderProduct(product);
+            loadData();
           }}
         />
       )}

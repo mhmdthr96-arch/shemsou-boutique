@@ -1329,3 +1329,217 @@ h1, h2, h3, h4, .font-royal {
     height: 68px;
   }
 }
+
+/* ==========================================================================
+   ⚜️ HERO SLIDER — Cinematic Auto-Sliding Banner
+   ========================================================================== */
+
+.hero-slider {
+  position: relative;
+  width: 100%;
+  height: clamp(280px, 55vw, 680px);
+  overflow: hidden;
+  background: #000;
+  user-select: none;
+}
+
+/* Slide Track */
+.hero-slider__track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Individual Slide */
+.hero-slider__slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 0.65s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.65s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-slider__slide.is-active {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+  z-index: 1;
+}
+
+/* Entry / Leave animations */
+.hero-slider__slide.entering-next {
+  animation: slideEnterNext 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.hero-slider__slide.entering-prev {
+  animation: slideEnterPrev 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes slideEnterNext {
+  from { opacity: 0; transform: translateX(40px) scale(1.03); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes slideEnterPrev {
+  from { opacity: 0; transform: translateX(-40px) scale(1.03); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+/* Media (image or video) */
+.hero-slider__media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Dark gradient overlay */
+.hero-slider__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.08) 0%,
+    rgba(0,0,0,0.0) 40%,
+    rgba(0,0,0,0.55) 100%
+  );
+  z-index: 2;
+}
+
+/* --- Progress Bars --- */
+.hero-slider__progress-bars {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+.hero-slider__progress-track {
+  flex: 1;
+  height: 2.5px;
+  background: rgba(255,255,255,0.25);
+  border-radius: 2px;
+  overflow: hidden;
+  backdrop-filter: blur(2px);
+}
+
+.hero-slider__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #F3E5AB, #D4AF37);
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(212,175,55,0.7);
+  will-change: width;
+}
+
+/* --- Arrow Buttons --- */
+.hero-slider__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  background: rgba(11,11,11,0.55);
+  border: 1px solid rgba(212,175,55,0.25);
+  color: var(--gold-light);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.hero-slider__arrow:hover {
+  background: rgba(212,175,55,0.2);
+  border-color: rgba(212,175,55,0.6);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.hero-slider__arrow--prev { left: 14px; }
+.hero-slider__arrow--next { right: 14px; }
+
+/* --- Play / Pause Button --- */
+.hero-slider__playpause {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 10;
+  background: rgba(11,11,11,0.6);
+  border: 1px solid rgba(212,175,55,0.3);
+  color: var(--gold-light);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s, transform 0.15s;
+}
+
+.hero-slider__playpause:hover {
+  background: rgba(212,175,55,0.18);
+  transform: scale(1.1);
+}
+
+/* --- Dot Navigation --- */
+.hero-slider__dots {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 7px;
+  z-index: 10;
+}
+
+.hero-slider__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.35);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.hero-slider__dot.is-active {
+  width: 22px;
+  border-radius: 4px;
+  background: var(--gold-pure);
+  box-shadow: 0 0 8px rgba(212,175,55,0.6);
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .hero-slider {
+    height: clamp(200px, 56vw, 360px);
+  }
+  .hero-slider__arrow {
+    width: 34px;
+    height: 34px;
+  }
+  .hero-slider__arrow--prev { left: 8px; }
+  .hero-slider__arrow--next { right: 8px; }
+}
+
+@media (max-width: 480px) {
+  .hero-slider {
+    height: 56vw;
+    min-height: 190px;
+  }
+  .hero-slider__progress-bars {
+    top: 8px;
+    left: 10px;
+    right: 10px;
+    gap: 4px;
+  }
+}
