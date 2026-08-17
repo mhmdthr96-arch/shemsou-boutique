@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Search, X, SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 
@@ -55,7 +55,7 @@ export default function SearchAndFilters({
               style={{
                 width: 'auto',
                 padding: '0.6rem 1.2rem',
-                borderRadius: '30px',
+                borderRadius: '0',
                 background: 'var(--bg-surface)',
                 borderColor: 'rgba(212, 175, 55, 0.3)',
                 fontSize: '0.85rem',

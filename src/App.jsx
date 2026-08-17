@@ -8,12 +8,14 @@ import SearchAndFilters from './components/SearchAndFilters';
 import ProductGrid from './components/ProductGrid';
 import DirectOrderModal from './components/DirectOrderModal';
 import AdminDashboard from './components/AdminDashboard';
+import InstallPrompt from './components/InstallPrompt';
 import Footer from './components/Footer';
 import {
   getProducts,
   getCategories,
   getSlides,
-  getStoreSettings
+  getStoreSettings,
+  cleanupDemoProducts
 } from './lib/supabase';
 
 function StorefrontContent() {
@@ -38,6 +40,7 @@ function StorefrontContent() {
   // Load Data on Mount
   const loadData = async () => {
     try {
+      await cleanupDemoProducts();
       const [prods, cats, slds, settings] = await Promise.all([
         getProducts(),
         getCategories(),
@@ -91,17 +94,23 @@ function StorefrontContent() {
     setSearchTerm('');
   };
 
-  const handleSearchFocus = () => {
-    const el = document.getElementById('catalog-controls');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-      const input = el.querySelector('input');
-      if (input) input.focus();
-    }
-  };
-
   return (
     <div className="store-wrapper">
+      {/* ⚜️ Luxury Watermark Background */}
+      <div className="luxury-bg" aria-hidden="true">
+        <div className="luxury-bg__glow" />
+        <div className="luxury-bg__watermark">
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+          <span>SHEMSOU BOUTIQUE</span>
+        </div>
+      </div>
+
       {/* ⚜️ Hero Slider — Top of page, first thing the visitor sees */}
       <HeroSlider slides={slides} />
 
@@ -111,7 +120,7 @@ function StorefrontContent() {
       {/* Main Luxury Header with Central Avatar Logo (IMG_3498.PNG) */}
       <Header
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onSearchClick={handleSearchFocus}
+        storeSettings={storeSettings}
       />
 
       {/* Categories & Search Controls */}
@@ -165,6 +174,9 @@ function StorefrontContent() {
           onDataUpdated={loadData}
         />
       )}
+
+      {/* PWA Install Prompt (per-browser) */}
+      <InstallPrompt />
     </div>
   );
 }

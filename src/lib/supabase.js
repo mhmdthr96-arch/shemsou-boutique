@@ -12,6 +12,34 @@ const LOCAL_PRODUCTS_KEY = 'shemsou_local_products';
 const LOCAL_STORIES_KEY = 'shemsou_local_stories';
 const LOCAL_ORDERS_KEY = 'shemsou_local_orders';
 const LOCAL_SETTINGS_KEY = 'shemsou_local_settings';
+const LOCAL_CATEGORIES_KEY = 'shemsou_local_categories';
+
+// -------------------------------------------------------------
+// SCHEMA-AWARE COLUMN FILTERING
+// The app may send fields that don't exist in a given Supabase
+// table (e.g. `duration` on stories, `source` on orders). Postgres
+// rejects the whole insert/upsert on an unknown column, so we
+// strip payloads down to the columns that actually exist. This
+// keeps every admin write succeeding instead of silently falling
+// back to localStorage.
+// -------------------------------------------------------------
+const TABLE_COLUMNS = {
+  products: ['id','title_ar','title_fr','title_en','description_ar','description_fr','description_en','price','old_price','category_id','cover_image','images','colors','sizes','variants','is_featured','is_new','is_active','created_at','updated_at'],
+  stories: ['id','title_ar','title_fr','title_en','media_url','media_type','cloudinary_public_id','tagged_product_id','is_active','sort_order','created_at','duration'],
+  orders: ['id','order_number','customer_name','customer_phone','customer_wilaya','customer_address','customer_notes','product_id','product_title','selected_color','selected_color_code','selected_size','quantity','unit_price','total_price','status','ip_address','created_at','delivery_fee'],
+  categories: ['id','name_ar','name_fr','name_en','slug','icon','sort_order','created_at'],
+  store_settings: ['key','value','updated_at']
+};
+
+function pickColumns(table, obj) {
+  const allowed = TABLE_COLUMNS[table];
+  if (!allowed || !obj || typeof obj !== 'object') return obj;
+  const out = {};
+  for (const key of allowed) {
+    if (obj[key] !== undefined) out[key] = obj[key];
+  }
+  return out;
+}
 
 export function getSupabaseCredentials() {
   try {
@@ -127,7 +155,7 @@ export async function saveProduct(product) {
     try {
       const { data, error } = await supabase
         .from('products')
-        .upsert([productToSave])
+        .upsert([pickColumns('products', productToSave)])
         .select();
       if (!error && data) {
         // Also update local cache
@@ -189,9 +217,77 @@ export async function deleteProduct(productId) {
 }
 
 /**
- * Decrement stock after order placement
+ * Delete ALL products (Admin "start fresh" action)
  */
-export async function decrementStock(productId, selectedColorCode, selectedSize, orderedQty) {
+export async function deleteAllProducts() {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('products').select('id');
+      if (data && data.length > 0) {
+        for (const p of data) {
+          await supabase.from('products').delete().eq('id', p.id);
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase bulk delete error', e);
+    }
+  }
+
+  try {
+    localStorage.removeItem(LOCAL_PRODUCTS_KEY);
+  } catch (e) {
+    console.error(e);
+  }
+  return true;
+}
+
+/**
+ * Cleanup leftover demo/seed products (non-UUID ids, e.g. "prod-1")
+ * while preserving all real (UUID) products. Runs silently on load.
+ */
+export async function cleanupDemoProducts() {
+  const DEMO_ID = /^prod-\d+$/;
+
+  const removeFromLocal = () => {
+    try {
+      const local = localStorage.getItem(LOCAL_PRODUCTS_KEY);
+      if (local) {
+        const products = JSON.parse(local).filter(p => !DEMO_ID.test(String(p.id)));
+        localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(products));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { data } = await supabase.from('products').select('id').eq('is_active', true);
+      const demoIds = (data || []).map(d => d.id).filter(id => DEMO_ID.test(String(id)));
+      for (const id of demoIds) {
+        await supabase.from('products').delete().eq('id', id);
+      }
+    } catch (e) {
+      console.warn('Supabase demo cleanup error', e);
+    }
+  }
+
+  removeFromLocal();
+  return true;
+}
+
+/**
+ * Adjust a product variant's stock.
+ * @param {string} productId
+ * @param {string} selectedColorCode - the variant color CODE (matches variants[].color)
+ * @param {string} selectedSize
+ * @param {number} deltaQty - positive to deduct (e.g. on confirm/deliver), negative to restore (e.g. on cancel)
+ */
+export async function adjustStock(productId, selectedColorCode, selectedSize, deltaQty) {
+  if (!productId || !selectedColorCode || !selectedSize || !deltaQty) return;
+
   const products = await getProducts();
   const product = products.find(p => p.id === productId);
   if (!product) return;
@@ -203,7 +299,7 @@ export async function decrementStock(productId, selectedColorCode, selectedSize,
 
   if (variantIndex >= 0) {
     const currentStock = Number(variants[variantIndex].stock) || 0;
-    variants[variantIndex].stock = Math.max(0, currentStock - orderedQty);
+    variants[variantIndex].stock = Math.max(0, currentStock - deltaQty);
     product.variants = variants;
     await saveProduct(product);
   }
@@ -212,6 +308,15 @@ export async function decrementStock(productId, selectedColorCode, selectedSize,
 /**
  * Load Categories
  */
+function getLocalCategories() {
+  try {
+    const local = localStorage.getItem(LOCAL_CATEGORIES_KEY);
+    return local ? JSON.parse(local) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getCategories() {
   const supabase = getSupabaseClient();
   if (supabase) {
@@ -220,12 +325,52 @@ export async function getCategories() {
         .from('categories')
         .select('*')
         .order('sort_order', { ascending: true });
-      if (!error && data && data.length > 0) return data;
+      if (!error && data && data.length > 0) {
+        // Merge any categories the admin added while offline so they stay visible
+        const localCats = getLocalCategories();
+        const merged = [...data];
+        localCats.forEach((c) => {
+          if (!merged.find((m) => m.id === c.id)) merged.push(c);
+        });
+        return merged;
+      }
     } catch (e) {
       console.warn('Supabase categories error', e);
     }
   }
-  return INITIAL_CATEGORIES;
+  return [...INITIAL_CATEGORIES, ...getLocalCategories()];
+}
+
+/**
+ * Save / Update Category (Admin "add my own category" action)
+ */
+export async function saveCategory(category) {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('categories').upsert([pickColumns('categories', category)]);
+      if (!error) {
+        updateLocalCategory(category);
+        return category;
+      }
+    } catch (e) {
+      console.warn('Supabase category upsert error', e);
+    }
+  }
+  return updateLocalCategory(category);
+}
+
+function updateLocalCategory(category) {
+  const cats = getLocalCategories();
+  const index = cats.findIndex((c) => c.id === category.id);
+  if (index >= 0) cats[index] = category;
+  else cats.push(category);
+  try {
+    localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(cats));
+  } catch (e) {
+    console.error(e);
+  }
+  return category;
 }
 
 /**
@@ -242,7 +387,7 @@ export async function getSlides() {
         .select('*')
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
-      if (!error && data) return data;
+      if (!error && data && data.length > 0) return data;
     } catch (e) {
       console.warn('Supabase slides error', e);
     }
@@ -264,7 +409,7 @@ export async function saveSlide(slide) {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const { data, error } = await supabase.from('stories').upsert([slide]).select();
+      const { data, error } = await supabase.from('stories').upsert([pickColumns('stories', slide)]).select();
       if (!error && data) {
         updateLocalSlide(slide);
         return data[0];
@@ -327,16 +472,16 @@ export async function createOrder(orderPayload) {
     ...orderPayload,
     order_number: orderNumber,
     status: 'pending',
+    delivery_fee: orderPayload.delivery_fee ? Number(orderPayload.delivery_fee) : 0,
     created_at: new Date().toISOString()
   };
 
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const { data, error } = await supabase.from('orders').insert([finalOrder]).select();
+      const { data, error } = await supabase.from('orders').insert([pickColumns('orders', finalOrder)]).select();
       if (!error && data) {
         saveLocalOrder(finalOrder);
-        await decrementStock(finalOrder.product_id, finalOrder.selected_color, finalOrder.selected_size, finalOrder.quantity);
         return finalOrder;
       }
     } catch (e) {
@@ -344,9 +489,8 @@ export async function createOrder(orderPayload) {
     }
   }
 
-  // Save locally & decrement stock
+  // Save locally (stock is adjusted later by the admin when the order is confirmed/delivered)
   saveLocalOrder(finalOrder);
-  await decrementStock(finalOrder.product_id, finalOrder.selected_color, finalOrder.selected_size, finalOrder.quantity);
   return finalOrder;
 }
 
@@ -443,7 +587,7 @@ export async function saveStoreSettings(settings) {
   if (supabase) {
     try {
       for (const [key, value] of Object.entries(settings)) {
-        await supabase.from('store_settings').upsert({ key, value, updated_at: new Date().toISOString() });
+        await supabase.from('store_settings').upsert(pickColumns('store_settings', { key, value, updated_at: new Date().toISOString() }));
       }
     } catch (e) {
       console.warn(e);
@@ -456,4 +600,62 @@ export async function saveStoreSettings(settings) {
     console.error(e);
   }
   return true;
+}
+
+// -------------------------------------------------------------
+// ONE-TIME LOCAL → SUPABASE MIGRATION
+// Runs once per admin session. Pushes any data the admin created
+// while offline / before Supabase was wired up (products, slides,
+// orders) into Supabase so it becomes visible to customers and
+// recoverable. Upserts are idempotent (keyed by id / order_number).
+// -------------------------------------------------------------
+let migrationRan = false;
+
+export async function migrateLocalDataToSupabase() {
+  if (migrationRan) return;
+  migrationRan = true;
+
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+
+  const readLocal = (key) => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  try {
+    // Products
+    const products = readLocal(LOCAL_PRODUCTS_KEY);
+    for (const p of products) {
+      const clean = pickColumns('products', p);
+      if (clean && clean.id) {
+        await supabase.from('products').upsert([clean]).select();
+      }
+    }
+
+    // Slides
+    const slides = readLocal(LOCAL_SLIDES_KEY);
+    for (const s of slides) {
+      const clean = pickColumns('stories', s);
+      if (clean && clean.id) {
+        await supabase.from('stories').upsert([clean]).select();
+      }
+    }
+
+    // Orders (let the DB generate id; dedupe by order_number)
+    const orders = readLocal(LOCAL_ORDERS_KEY);
+    for (const o of orders) {
+      const { id, ...rest } = o;
+      const clean = pickColumns('orders', rest);
+      if (clean && clean.order_number) {
+        await supabase.from('orders').upsert([clean], { onConflict: 'order_number' }).select();
+      }
+    }
+  } catch (e) {
+    console.warn('Local → Supabase migration skipped:', e);
+  }
 }

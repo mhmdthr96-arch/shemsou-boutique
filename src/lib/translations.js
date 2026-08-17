@@ -11,6 +11,7 @@ export const translations = {
     storeName: 'SHEMSOU BOUTIQUE',
     storeTagline: 'أرقى تشكيلة من الأحذية والحقائب الفاخرة',
     announcement: '✨ مرحباً بكم في SHEMSOU BOUTIQUE • توصيل سريع لكافة الولايات • الدفع عند الاستلام 🚚',
+    installApp: 'تثبيت كتطبيق',
     contactWhatsapp: 'تواصل عبر واتساب',
     adminLogin: 'لوحة الإدارة',
     searchPlaceholder: 'ابحث بالاسم، الموديل أو الفئة...',
@@ -35,6 +36,7 @@ export const translations = {
     chooseSize: 'اختر المقاس',
     quantity: 'الكمية',
     totalPrice: 'المجموع الإجمالي',
+    totalWithDelivery: 'الإجمالي مع التوصيل',
     unitPrice: 'سعر القطعة',
     freeDeliveryThreshold: 'توصيل مجاني للطلبات الكبيرة',
     
@@ -153,6 +155,7 @@ export const translations = {
     storeName: 'SHEMSOU BOUTIQUE',
     storeTagline: 'La Haute Maroquinerie & Chaussures de Luxe',
     announcement: '✨ Bienvenue chez SHEMSOU BOUTIQUE • Livraison rapide • Paiement à la livraison 🚚',
+    installApp: "Installer l'application",
     contactWhatsapp: 'Contact WhatsApp',
     adminLogin: 'Administration',
     searchPlaceholder: 'Rechercher par nom, modèle ou catégorie...',
@@ -177,6 +180,7 @@ export const translations = {
     chooseSize: 'Choisir la taille',
     quantity: 'Quantité',
     totalPrice: 'Prix Total',
+    totalWithDelivery: 'Total avec livraison',
     unitPrice: 'Prix Unitaire',
     freeDeliveryThreshold: 'Livraison express disponible',
     
@@ -295,6 +299,7 @@ export const translations = {
     storeName: 'SHEMSOU BOUTIQUE',
     storeTagline: 'Luxury Footwear & Leather Goods',
     announcement: '✨ Welcome to SHEMSOU BOUTIQUE • Express Delivery • Cash on Delivery 🚚',
+    installApp: 'Install App',
     contactWhatsapp: 'WhatsApp Support',
     adminLogin: 'Admin Panel',
     searchPlaceholder: 'Search shoes, bags, or models...',
@@ -319,6 +324,7 @@ export const translations = {
     chooseSize: 'Select Size',
     quantity: 'Quantity',
     totalPrice: 'Total Amount',
+    totalWithDelivery: 'Total with Delivery',
     unitPrice: 'Unit Price',
     freeDeliveryThreshold: 'Fast & Secure Shipping',
     

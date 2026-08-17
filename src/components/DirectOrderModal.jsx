@@ -130,6 +130,12 @@ export default function DirectOrderModal({
   const unitPrice = Number(product.price) || 0;
   const totalPrice = unitPrice * quantity;
 
+  // Wilaya-based delivery fee
+  const wilayasList = storeSettings?.wilayas || [];
+  const selectedWilaya = wilayasList.find((w) => w.name === formData.customer_wilaya);
+  const deliveryFee = selectedWilaya ? Number(selectedWilaya.delivery_fee) || 0 : 0;
+  const totalWithDelivery = totalPrice + deliveryFee;
+
   // Selected Color Details
   const selectedColorObj = colors.find(
     (c) => c.code === selectedColor || c.name_en === selectedColor
@@ -166,6 +172,7 @@ export default function DirectOrderModal({
       product_id: product.id,
       product_title: title,
       selected_color: selectedColorName,
+      selected_color_code: selectedColor,
       selected_size: selectedSize,
       quantity,
       unit_price: unitPrice,
@@ -230,6 +237,8 @@ export default function DirectOrderModal({
 📏 *المقاس:* ${selectedSize}
 🔢 *الكمية:* ${quantity}
 💰 *السعر الإجمالي:* ${totalPrice.toLocaleString()} ${t.currency}
+${selectedWilaya ? `🚚 *سعر التوصيل (${selectedWilaya.name}):* ${deliveryFee.toLocaleString()} ${t.currency}` : ''}
+💎 *الإجمالي مع التوصيل:* ${totalWithDelivery.toLocaleString()} ${t.currency}
 -----------------------------------
 👤 *اسم الزبون:* ${sanitized.customer_name}
 📞 *رقم الهاتف:* ${sanitized.customer_phone}
@@ -252,7 +261,8 @@ ${sanitized.customer_notes ? `📝 *ملاحظات:* ${sanitized.customer_notes}
       selected_size: selectedSize,
       quantity,
       unit_price: unitPrice,
-      total_price: totalPrice,
+      delivery_fee: deliveryFee,
+      total_price: totalWithDelivery,
       source: 'whatsapp'
     }).catch(console.error);
 
@@ -520,17 +530,26 @@ ${sanitized.customer_notes ? `📝 *ملاحظات:* ${sanitized.customer_notes}
                   </div>
 
                   <div style={{ textAlign: 'end' }}>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.15rem' }}>
                       {t.totalPrice}
                     </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--beige-silk)' }}>
+                      {totalPrice.toLocaleString()} {t.currency}
+                    </div>
+                    {selectedWilaya && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        سعر التوصيل ({selectedWilaya.name}): {deliveryFee.toLocaleString()} {t.currency}
+                      </div>
+                    )}
                     <div
                       style={{
-                        fontSize: '1.3rem',
+                        fontSize: '1.25rem',
                         fontWeight: '800',
-                        color: 'var(--gold-light)'
+                        color: 'var(--gold-light)',
+                        marginTop: '0.3rem'
                       }}
                     >
-                      {totalPrice.toLocaleString()} {t.currency}
+                      {t.totalWithDelivery || 'الإجمالي مع التوصيل'}: {totalWithDelivery.toLocaleString()} {t.currency}
                     </div>
                   </div>
                 </div>
@@ -583,15 +602,32 @@ ${sanitized.customer_notes ? `📝 *ملاحظات:* ${sanitized.customer_notes}
 
                 <div className="form-group">
                   <label className="form-label">{t.wilaya} *</label>
-                  <input
-                    type="text"
-                    name="customer_wilaya"
-                    className="form-input"
-                    placeholder={t.wilayaPlaceholder}
-                    value={formData.customer_wilaya}
-                    onChange={handleInputChange}
-                    required
-                  />
+                  {wilayasList.length > 0 ? (
+                    <select
+                      name="customer_wilaya"
+                      className="form-input"
+                      value={formData.customer_wilaya}
+                      onChange={handleInputChange}
+                      required
+                    >
+                      <option value="">{t.wilayaPlaceholder}</option>
+                      {wilayasList.map((w) => (
+                        <option key={w.name} value={w.name}>
+                          {w.name} — {Number(w.delivery_fee) || 0} {t.currency}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      name="customer_wilaya"
+                      className="form-input"
+                      placeholder={t.wilayaPlaceholder}
+                      value={formData.customer_wilaya}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  )}
                   {formErrors.customer_wilaya && (
                     <span className="form-error-msg">{formErrors.customer_wilaya}</span>
                   )}

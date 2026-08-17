@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { X, ChevronLeft, ChevronRight, Volume2, VolumeX, ShoppingBag, Sparkles } from 'lucide-react';
 
@@ -216,7 +216,7 @@ export default function StoryViewerModal({
               style={{
                 background: 'rgba(20, 20, 20, 0.9)',
                 border: '1px solid rgba(212, 175, 55, 0.4)',
-                borderRadius: '12px',
+                borderRadius: '0',
                 padding: '0.75rem',
                 display: 'flex',
                 alignItems: 'center',
@@ -228,7 +228,7 @@ export default function StoryViewerModal({
                 <img
                   src={taggedProduct.cover_image}
                   alt={taggedProductTitle}
-                  style={{ width: '46px', height: '46px', borderRadius: '8px', objectFit: 'cover' }}
+                  style={{ width: '46px', height: '46px', borderRadius: '0', objectFit: 'cover' }}
                 />
                 <div>
                   <div

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
+import { optimizeMediaUrl } from '../lib/cloudinary';
 
 const DEFAULT_SLIDES = [
   {
@@ -104,7 +105,7 @@ export default function HeroSlider({ slides: propSlides }) {
             >
               {slide.media_type === 'video' ? (
                 <video
-                  src={slide.media_url}
+                  src={optimizeMediaUrl(slide.media_url)}
                   autoPlay={isActive && !paused}
                   muted
                   loop={false}
@@ -113,7 +114,7 @@ export default function HeroSlider({ slides: propSlides }) {
                 />
               ) : (
                 <img
-                  src={slide.media_url}
+                  src={optimizeMediaUrl(slide.media_url)}
                   alt={slide.title || 'SHEMSOU BOUTIQUE'}
                   className="hero-slider__media"
                   loading={idx === 0 ? 'eager' : 'lazy'}

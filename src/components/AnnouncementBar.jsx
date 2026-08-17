@@ -1,9 +1,8 @@
-import React from 'react';
+import React, { useState, useRef, useLayoutEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
-import { Sparkles, Phone, MessageSquare } from 'lucide-react';
 
 export default function AnnouncementBar({ storeSettings }) {
-  const { lang, t, changeLanguage } = useLanguage();
+  const { lang, t } = useLanguage();
 
   const announcementText =
     lang === 'ar'
@@ -12,61 +11,46 @@ export default function AnnouncementBar({ storeSettings }) {
       ? storeSettings?.announcement_fr || t.announcement
       : storeSettings?.announcement_en || t.announcement;
 
+  // Small plain space between repetitions (non-breaking so it never collapses)
+  const separator = '  ';
+  const unit = announcementText + separator;
+
+  const measureRef = useRef(null);
+  const [copies, setCopies] = useState(3);
+
+  // Measure the single repeating unit and compute how many copies are needed so
+  // the track is always wider than 2x the viewport → the loop never shows a gap.
+  // Recomputed after web fonts load (width changes) and on resize.
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!measureRef.current) return;
+      const unitWidth = measureRef.current.offsetWidth;
+      if (unitWidth > 0) {
+        const needed = Math.max(3, Math.ceil((window.innerWidth * 2 * 1.15) / unitWidth));
+        setCopies(needed);
+      }
+    };
+    measure();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(measure);
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [announcementText, separator]);
+
+  // Each block ends with the separator, so the seam between the two identical
+  // blocks (and every repetition) has the same small space → perfectly continuous.
+  const repeated = unit.repeat(copies);
+
   return (
-    <div className="announcement-bar">
-      <div className="container">
-        <div className="announcement-content">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Sparkles size={14} color="#D4AF37" />
-            <span>{announcementText}</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {storeSettings?.whatsapp_number && (
-              <a
-                href={`https://wa.me/${storeSettings.whatsapp_number}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  color: '#D4AF37',
-                  textDecoration: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  fontSize: '0.78rem',
-                  fontWeight: '600'
-                }}
-              >
-                <MessageSquare size={13} />
-                <span>{t.contactWhatsapp}</span>
-              </a>
-            )}
-
-            {/* Language Switcher */}
-            <div className="lang-selector">
-              <button
-                type="button"
-                className={`lang-btn ${lang === 'ar' ? 'active' : ''}`}
-                onClick={() => changeLanguage('ar')}
-              >
-                عربي
-              </button>
-              <button
-                type="button"
-                className={`lang-btn ${lang === 'fr' ? 'active' : ''}`}
-                onClick={() => changeLanguage('fr')}
-              >
-                FR
-              </button>
-              <button
-                type="button"
-                className={`lang-btn ${lang === 'en' ? 'active' : ''}`}
-                onClick={() => changeLanguage('en')}
-              >
-                EN
-              </button>
-            </div>
-          </div>
+    <div className="announcement-bar" aria-label={announcementText}>
+      <span ref={measureRef} className="announcement-measure">
+        {unit}
+      </span>
+      <div className="announcement-ticker">
+        <div className="announcement-track">
+          <span>{repeated}</span>
+          <span aria-hidden="true">{repeated}</span>
         </div>
       </div>
     </div>

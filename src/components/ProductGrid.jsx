@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import ProductCard from './ProductCard';
 import { Sparkles, PackageOpen } from 'lucide-react';
@@ -17,7 +17,7 @@ export default function ProductGrid({
           textAlign: 'center',
           padding: '5rem 1rem',
           background: 'var(--bg-surface)',
-          borderRadius: '16px',
+          borderRadius: '0',
           margin: '2rem 0',
           border: '1px solid rgba(255, 255, 255, 0.05)'
         }}

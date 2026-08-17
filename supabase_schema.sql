@@ -78,12 +78,34 @@ CREATE TABLE IF NOT EXISTS public.orders (
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 5b. DELIVERY FEE PER ORDER (set from the customer's selected wilaya)
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_fee NUMERIC(10, 2);
+
+-- 5c. COLOR CODE (matches variants[].color) so stock can be decremented by code, not localized name
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS selected_color_code TEXT;
+
 -- 6. STORE SETTINGS TABLE
 CREATE TABLE IF NOT EXISTS public.store_settings (
     key TEXT PRIMARY KEY,
     value JSONB NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- -------------------------------------------------------------
+-- 🔧 SCHEMA PATCHES (safe to re-run: IF NOT EXISTS / IF EXISTS)
+-- -------------------------------------------------------------
+
+-- The slider sends a `duration` (seconds) field that was missing
+-- from the original table definition. Without it, the upsert fails
+-- and slides never reach Supabase.
+ALTER TABLE public.stories ADD COLUMN IF NOT EXISTS duration INT DEFAULT 5;
+
+-- Remove restrictive foreign keys so admin writes never fail in the
+-- hybrid (local + Supabase) mode:
+--  * orders.product_id may reference a product not yet synced to Supabase
+--  * products.category_id may reference a category not present in Supabase
+ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_product_id_fkey;
+ALTER TABLE public.products DROP CONSTRAINT IF EXISTS products_category_id_fkey;
 
 -- ==========================================================
 -- 🛡️ PERFORMANCE INDEXES (Optimized for Free Tier Quota)
@@ -105,30 +127,82 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.store_settings ENABLE ROW LEVEL SECURITY;
 
 -- Categories RLS
+DROP POLICY IF EXISTS "Allow public read categories" ON public.categories;
+DROP POLICY IF EXISTS "Allow auth all categories" ON public.categories;
 CREATE POLICY "Allow public read categories" ON public.categories FOR SELECT USING (true);
 CREATE POLICY "Allow auth all categories" ON public.categories FOR ALL TO authenticated USING (true);
 
 -- Products RLS
+DROP POLICY IF EXISTS "Allow public read active products" ON public.products;
+DROP POLICY IF EXISTS "Allow auth all products" ON public.products;
 CREATE POLICY "Allow public read active products" ON public.products FOR SELECT USING (is_active = true);
 CREATE POLICY "Allow auth all products" ON public.products FOR ALL TO authenticated USING (true);
 
 -- Stories RLS
+DROP POLICY IF EXISTS "Allow public read active stories" ON public.stories;
+DROP POLICY IF EXISTS "Allow auth all stories" ON public.stories;
 CREATE POLICY "Allow public read active stories" ON public.stories FOR SELECT USING (is_active = true);
 CREATE POLICY "Allow auth all stories" ON public.stories FOR ALL TO authenticated USING (true);
 
 -- Orders RLS (Public can only INSERT their order; only authenticated admin can view or modify)
+DROP POLICY IF EXISTS "Allow public insert order" ON public.orders;
+DROP POLICY IF EXISTS "Allow auth all orders" ON public.orders;
 CREATE POLICY "Allow public insert order" ON public.orders FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow auth all orders" ON public.orders FOR ALL TO authenticated USING (true);
 
 -- Store Settings RLS
+DROP POLICY IF EXISTS "Allow public read settings" ON public.store_settings;
+DROP POLICY IF EXISTS "Allow auth all settings" ON public.store_settings;
 CREATE POLICY "Allow public read settings" ON public.store_settings FOR SELECT USING (true);
 CREATE POLICY "Allow auth all settings" ON public.store_settings FOR ALL TO authenticated USING (true);
+
+-- ==========================================================
+-- 🔓 ANON WRITE POLICIES (Single-owner storefront)
+-- The storefront uses the public anon key, so admin writes
+-- (products / stories / categories / settings / orders) must
+-- be permitted for the anon role. Reads for customers stay
+-- scoped (active products only, etc.) via the policies above.
+-- ==========================================================
+DROP POLICY IF EXISTS "anon insert products"   ON public.products;
+DROP POLICY IF EXISTS "anon update products"   ON public.products;
+DROP POLICY IF EXISTS "anon delete products"   ON public.products;
+CREATE POLICY "anon insert products"   ON public.products   FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "anon update products"   ON public.products   FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "anon delete products"   ON public.products   FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon insert stories"    ON public.stories;
+DROP POLICY IF EXISTS "anon update stories"    ON public.stories;
+DROP POLICY IF EXISTS "anon delete stories"    ON public.stories;
+CREATE POLICY "anon insert stories"    ON public.stories    FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "anon update stories"    ON public.stories    FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "anon delete stories"    ON public.stories    FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon insert categories" ON public.categories;
+DROP POLICY IF EXISTS "anon update categories" ON public.categories;
+DROP POLICY IF EXISTS "anon delete categories" ON public.categories;
+CREATE POLICY "anon insert categories" ON public.categories FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "anon update categories" ON public.categories FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "anon delete categories" ON public.categories FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon insert settings"   ON public.store_settings;
+DROP POLICY IF EXISTS "anon update settings"   ON public.store_settings;
+DROP POLICY IF EXISTS "anon delete settings"   ON public.store_settings;
+CREATE POLICY "anon insert settings"   ON public.store_settings FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "anon update settings"   ON public.store_settings FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "anon delete settings"   ON public.store_settings FOR DELETE TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon select orders"     ON public.orders;
+DROP POLICY IF EXISTS "anon update orders"     ON public.orders;
+DROP POLICY IF EXISTS "anon delete orders"     ON public.orders;
+CREATE POLICY "anon select orders"     ON public.orders     FOR SELECT TO anon USING (true);
+CREATE POLICY "anon update orders"     ON public.orders     FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "anon delete orders"     ON public.orders     FOR DELETE TO anon USING (true);
 
 -- ==========================================================
 -- 📦 SEED DEFAULT STORE CATEGORIES
 -- ==========================================================
 INSERT INTO public.categories (id, name_ar, name_fr, name_en, slug, icon, sort_order)
-VALUES 
+VALUES
     ('all', 'الكل', 'Tous', 'All', 'all', 'Sparkles', 0),
     ('luxury-heels', 'أحذية كعب فاخرة', 'Escarpins & Talons', 'Luxury Heels', 'luxury-heels', 'Crown', 1),
     ('luxury-bags', 'حقائب يد راقية', 'Sacs à Main de Luxe', 'Luxury Handbags', 'luxury-bags', 'ShoppingBag', 2),

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import {
   Shield,
@@ -23,16 +23,21 @@ import {
   getProducts,
   saveProduct,
   deleteProduct,
+  deleteAllProducts,
   getSlides,
   saveSlide,
   deleteSlide,
   getOrders,
   updateOrderStatus,
+  adjustStock,
   getStoreSettings,
   saveStoreSettings,
   testSupabaseConnection,
   saveSupabaseCredentials,
-  getSupabaseCredentials
+  getSupabaseCredentials,
+  getCategories,
+  saveCategory,
+  migrateLocalDataToSupabase
 } from '../lib/supabase';
 import {
   uploadMedia,
@@ -41,19 +46,22 @@ import {
   saveCloudinaryConfig
 } from '../lib/cloudinary';
 
-const DEFAULT_PIN = '7777';
-
-export function getAdminPin() {
+function getAdminCredentials() {
   try {
-    return localStorage.getItem('shemsou_admin_pin') || DEFAULT_PIN;
+    const raw = localStorage.getItem('shemsou_admin_creds');
+    if (raw) return JSON.parse(raw);
   } catch {
-    return DEFAULT_PIN;
+    /* ignore */
   }
+  return { username: 'ishak', password: '7777' };
 }
 
-export function setAdminPin(newPin) {
+function setAdminCredentials(username, password) {
   try {
-    localStorage.setItem('shemsou_admin_pin', newPin.trim());
+    localStorage.setItem(
+      'shemsou_admin_creds',
+      JSON.stringify({ username: username.trim(), password })
+    );
     return true;
   } catch {
     return false;
@@ -67,14 +75,16 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return sessionStorage.getItem('shemsou_admin_auth') === 'true';
   });
-  const [pinInput, setPinInput] = useState('');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState('');
 
-  // Password / PIN Change State
-  const [currentPinInput, setCurrentPinInput] = useState('');
-  const [newPinInput, setNewPinInput] = useState('');
-  const [confirmPinInput, setConfirmPinInput] = useState('');
-  const [pinChangeMsg, setPinChangeMsg] = useState('');
+  // Change Credentials State
+  const [curPassInput, setCurPassInput] = useState('');
+  const [newUserInput, setNewUserInput] = useState('');
+  const [newPassInput, setNewPassInput] = useState('');
+  const [confirmPassInput, setConfirmPassInput] = useState('');
+  const [credChangeMsg, setCredChangeMsg] = useState('');
 
   // Active Tab
   const [activeTab, setActiveTab] = useState('products'); // 'products' | 'slides' | 'orders' | 'settings'
@@ -83,9 +93,18 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const [products, setProducts] = useState([]);
   const [slides, setSlides] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [storeSettings, setStoreSettings] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [newWilayaName, setNewWilayaName] = useState('');
+  const [newWilayaFee, setNewWilayaFee] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+
+  // Add-new-category inline form state
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCatAr, setNewCatAr] = useState('');
+  const [newCatFr, setNewCatFr] = useState('');
+  const [newCatEn, setNewCatEn] = useState('');
 
   // Editing Product State
   const [editingProduct, setEditingProduct] = useState(null);
@@ -105,15 +124,21 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const loadAllData = async () => {
     setIsLoading(true);
     try {
-      const [p, s, o, settings] = await Promise.all([
+      // Push any locally-stored products/slides/orders into Supabase
+      // (idempotent) so they become visible to customers.
+      await migrateLocalDataToSupabase();
+
+      const [p, s, o, settings, cats] = await Promise.all([
         getProducts(),
         getSlides(),
         getOrders(),
-        getStoreSettings()
+        getStoreSettings(),
+        getCategories()
       ]);
       setProducts(p || []);
       setSlides(s || []);
       setOrders(o || []);
+      setCategories(cats || []);
       setStoreSettings(settings || {});
     } catch (e) {
       console.error(e);
@@ -122,49 +147,90 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
     }
   };
 
+  const handleAddCategory = async () => {
+    if (!newCatAr.trim()) {
+      alert('يرجى كتابة اسم الفئة (بالعربية على الأقل)');
+      return;
+    }
+    const slug =
+      newCatEn.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') ||
+      newCatAr.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') ||
+      crypto.randomUUID().slice(0, 8);
+    const maxSort = categories.reduce((m, c) => Math.max(m, Number(c.sort_order) || 0), 0);
+    const newCat = {
+      id: crypto.randomUUID(),
+      name_ar: newCatAr.trim(),
+      name_fr: newCatFr.trim() || newCatAr.trim(),
+      name_en: newCatEn.trim() || newCatAr.trim(),
+      slug,
+      icon: 'Sparkles',
+      sort_order: maxSort + 1
+    };
+    try {
+      await saveCategory(newCat);
+      setCategories((prev) => [...prev, newCat]);
+      if (editingProduct) {
+        setEditingProduct((prev) => ({ ...prev, category_id: newCat.id }));
+      }
+      setNewCatAr('');
+      setNewCatFr('');
+      setNewCatEn('');
+      setShowAddCategory(false);
+      showToast('تمت إضافة الفئة بنجاح — تم تعيين المنتج عليها');
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3500);
   };
+
+  const uncompletedOrderCount = orders.filter(
+    (o) => o.status !== 'delivered' && o.status !== 'cancelled'
+  ).length;
 
   // -------------------------------------------------------------
   // AUTHENTICATION HANDLERS
   // -------------------------------------------------------------
   const handleLogin = (e) => {
     e.preventDefault();
-    const activePin = getAdminPin();
-    if (pinInput.trim() === activePin || pinInput.trim() === 'shemsou2026') {
+    const creds = getAdminCredentials();
+    if (usernameInput.trim() === creds.username && passwordInput === creds.password) {
       setIsAuthenticated(true);
       sessionStorage.setItem('shemsou_admin_auth', 'true');
       setAuthError('');
       loadAllData();
     } else {
-      setAuthError(`رمز المرور غير صحيح.`);
+      setAuthError('اسم المستخدم أو كلمة المرور غير صحيحين.');
     }
   };
 
-  const handleChangePin = (e) => {
+  const handleChangeCredentials = (e) => {
     e.preventDefault();
-    const activePin = getAdminPin();
-    if (currentPinInput.trim() !== activePin && currentPinInput.trim() !== 'shemsou2026') {
-      setPinChangeMsg('رمز المرور الحالي غير صحيح');
+    const creds = getAdminCredentials();
+    if (curPassInput !== creds.password) {
+      setCredChangeMsg('كلمة المرور الحالية غير صحيحة');
       return;
     }
-    if (newPinInput.trim().length < 4) {
-      setPinChangeMsg('رمز المرور الجديد يجب أن يكون 4 خانات على الأقل');
+    const newUser = newUserInput.trim() || creds.username;
+    if (newPassInput.length < 4) {
+      setCredChangeMsg('كلمة المرور الجديدة يجب أن تكون 4 خانات على الأقل');
       return;
     }
-    if (newPinInput.trim() !== confirmPinInput.trim()) {
-      setPinChangeMsg('رمز المرور الجديد وتأكيده غير متطابقين');
+    if (newPassInput !== confirmPassInput) {
+      setCredChangeMsg('كلمة المرور الجديدة وتأكيدها غير متطابقين');
       return;
     }
 
-    setAdminPin(newPinInput.trim());
-    setCurrentPinInput('');
-    setNewPinInput('');
-    setConfirmPinInput('');
-    setPinChangeMsg('✅ تم تغيير رمز المرور بنجاح!');
-    showToast('تم تحديث رمز مرور الإدارة بنجاح!');
+    setAdminCredentials(newUser, newPassInput);
+    setCurPassInput('');
+    setNewUserInput('');
+    setNewPassInput('');
+    setConfirmPassInput('');
+    setCredChangeMsg('✅ تم تحديث بيانات الدخول بنجاح!');
+    showToast('تم تحديث بيانات دخول الإدارة بنجاح!');
   };
 
   const handleLogout = () => {
@@ -177,7 +243,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   // -------------------------------------------------------------
   const handleStartAddProduct = () => {
     const newProd = {
-      id: `prod-${Date.now()}`,
+      id: crypto.randomUUID(),
       title_ar: '',
       title_fr: '',
       title_en: '',
@@ -270,6 +336,22 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
       await deleteProduct(prodId);
       await loadAllData();
       showToast('تم حذف المنتج وتنظيف وسائطه بنجاح');
+      if (onDataUpdated) onDataUpdated();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteAllProducts = async () => {
+    if (!window.confirm('سيتم حذف جميع المنتجات نهائياً من المتجر وقاعدة البيانات. هل أنت متأكد؟')) return;
+
+    setIsLoading(true);
+    try {
+      await deleteAllProducts();
+      await loadAllData();
+      showToast('تم حذف جميع المنتجات بنجاح — المتجر جاهز للاستخدام الفعلي');
       if (onDataUpdated) onDataUpdated();
     } catch (e) {
       alert(e.message);
@@ -440,7 +522,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   // -------------------------------------------------------------
   const handleStartAddSlide = () => {
     setEditingSlide({
-      id: `slide-${Date.now()}`,
+      id: crypto.randomUUID(),
       media_url: '',
       media_type: 'image',
       duration: 5,
@@ -523,6 +605,22 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   const handleUpdateOrderStatus = async (orderNumber, newStatus) => {
     setIsLoading(true);
     try {
+      const oldOrd = orders.find(o => o.order_number === orderNumber);
+      const oldStatus = oldOrd?.status || 'pending';
+      const isFinal = (s) => s === 'confirmed' || s === 'delivered';
+
+      // Adjust stock based on the status transition:
+      // - entering confirmed/delivered  -> deduct the ordered quantity
+      // - cancelling a confirmed/delivered order -> restore the quantity
+      if (oldOrd && oldOrd.product_id) {
+        const qty = Number(oldOrd.quantity) || 0;
+        if (!isFinal(oldStatus) && isFinal(newStatus)) {
+          await adjustStock(oldOrd.product_id, oldOrd.selected_color_code, oldOrd.selected_size, qty);
+        } else if (newStatus === 'cancelled' && isFinal(oldStatus)) {
+          await adjustStock(oldOrd.product_id, oldOrd.selected_color_code, oldOrd.selected_size, -qty);
+        }
+      }
+
       await updateOrderStatus(orderNumber, newStatus);
       await loadAllData();
       showToast('تم تحديث حالة الطلب!');
@@ -557,6 +655,47 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
     setSupabaseStatusMsg(result.message);
   };
 
+  // -------------------------------------------------------------
+  // WILAYAS (states / provinces) MANAGEMENT
+  // -------------------------------------------------------------
+  const getWilayas = () => Array.isArray(storeSettings.wilayas) ? storeSettings.wilayas : [];
+
+  const handleAddWilaya = () => {
+    const name = newWilayaName.trim();
+    if (!name) {
+      alert('يرجى كتابة اسم الولاية');
+      return;
+    }
+    const fee = Number(newWilayaFee) || 0;
+    const list = getWilayas();
+    if (list.some((w) => w.name === name)) {
+      alert('هذه الولاية موجودة مسبقاً');
+      return;
+    }
+    setStoreSettings({
+      ...storeSettings,
+      wilayas: [...list, { name, delivery_fee: fee }]
+    });
+    setNewWilayaName('');
+    setNewWilayaFee('');
+  };
+
+  const handleRemoveWilaya = (name) => {
+    setStoreSettings({
+      ...storeSettings,
+      wilayas: getWilayas().filter((w) => w.name !== name)
+    });
+  };
+
+  const handleWilayaFeeChange = (name, fee) => {
+    setStoreSettings({
+      ...storeSettings,
+      wilayas: getWilayas().map((w) =>
+        w.name === name ? { ...w, delivery_fee: Number(fee) || 0 } : w
+      )
+    });
+  };
+
   const copySqlSchema = () => {
     const sql = `-- SHEMSOU BOUTIQUE SQL Schema
 -- Copy and run in Supabase SQL Editor:
@@ -570,13 +709,35 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   // -------------------------------------------------------------
   if (!isAuthenticated) {
     return (
-      <div className="modal-overlay" onClick={onClose}>
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 2000,
+          background: 'var(--bg-primary)',
+          overflowY: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '2rem'
+        }}
+      >
         <div
-          className="direct-order-modal"
-          style={{ maxWidth: '440px', display: 'block', padding: '2.5rem' }}
-          onClick={(e) => e.stopPropagation()}
+          style={{
+            width: '100%',
+            maxWidth: '440px',
+            background: 'var(--bg-surface)',
+            border: '1px solid rgba(212,175,55,0.25)',
+            padding: '2.5rem',
+            position: 'relative'
+          }}
         >
-          <button type="button" className="modal-close-btn" onClick={onClose}>
+          <button
+            type="button"
+            className="modal-close-btn"
+            onClick={onClose}
+            style={{ position: 'absolute', top: '1rem', right: '1rem' }}
+          >
             <X size={18} />
           </button>
 
@@ -600,18 +761,26 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
               {t.adminTitle}
             </h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              {t.adminPinPrompt}
+              ادخل اسم المستخدم وكلمة المرور للوصول إلى لوحة التحكم
             </p>
           </div>
 
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <input
+              type="text"
+              className="form-input"
+              placeholder="اسم المستخدم"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              autoFocus
+              required
+            />
+            <input
               type="password"
               className="form-input"
-              placeholder={t.adminPinPlaceholder}
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              autoFocus
+              placeholder="كلمة المرور"
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
               required
             />
 
@@ -630,17 +799,24 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
   // RENDER: FULL ADMIN DASHBOARD
   // -------------------------------------------------------------
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2000,
+        background: 'var(--bg-primary)',
+        overflowY: 'auto'
+      }}
+    >
       <div
-        className="direct-order-modal"
         style={{
           maxWidth: '1240px',
-          height: '92vh',
+          minHeight: '100vh',
+          margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
           padding: '2rem'
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Top Bar */}
         <div
@@ -686,7 +862,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
               color: '#000',
               fontWeight: '700',
               padding: '0.6rem 1rem',
-              borderRadius: '8px',
+              borderRadius: '0',
               marginBottom: '1rem',
               textAlign: 'center'
             }}
@@ -734,6 +910,21 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
             <span>
               {t.tabOrders} ({orders.length})
             </span>
+            {uncompletedOrderCount > 0 && (
+              <span
+                style={{
+                  background: '#E74C3C',
+                  color: '#fff',
+                  fontSize: '0.7rem',
+                  fontWeight: '800',
+                  padding: '1px 7px',
+                  borderRadius: '0',
+                  marginInlineStart: '0.25rem'
+                }}
+              >
+                {uncompletedOrderCount}
+              </span>
+            )}
           </button>
 
           <button
@@ -821,6 +1012,86 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                       />
                     </div>
 
+                    {/* Category Assignment */}
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label">الفئة *</label>
+                      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <select
+                          className="form-input"
+                          style={{ flex: '1', minWidth: '220px' }}
+                          value={editingProduct.category_id || ''}
+                          onChange={(e) =>
+                            setEditingProduct({ ...editingProduct, category_id: e.target.value })
+                          }
+                        >
+                          <option value="" disabled>— اختر الفئة —</option>
+                          {categories
+                            .filter((c) => c.id !== 'all')
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {lang === 'ar'
+                                  ? c.name_ar
+                                  : lang === 'fr'
+                                  ? c.name_fr || c.name_ar
+                                  : c.name_en || c.name_ar}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="btn-luxury-outline"
+                          style={{ padding: '0.6rem 1rem', whiteSpace: 'nowrap' }}
+                          onClick={() => setShowAddCategory((v) => !v)}
+                        >
+                          ➕ إضافة فئة جديدة
+                        </button>
+                      </div>
+
+                      {showAddCategory && (
+                        <div
+                          style={{
+                            marginTop: '0.85rem',
+                            padding: '1rem',
+                            background: 'rgba(0,0,0,0.3)',
+                            border: 'var(--border-dark-subtle)'
+                          }}
+                        >
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                            <input
+                              className="form-input"
+                              placeholder="الاسم بالعربية *"
+                              value={newCatAr}
+                              onChange={(e) => setNewCatAr(e.target.value)}
+                            />
+                            <input
+                              className="form-input"
+                              placeholder="الاسم بالفرنسية"
+                              value={newCatFr}
+                              onChange={(e) => setNewCatFr(e.target.value)}
+                            />
+                            <input
+                              className="form-input"
+                              placeholder="الاسم بالإنجليزية"
+                              value={newCatEn}
+                              onChange={(e) => setNewCatEn(e.target.value)}
+                            />
+                          </div>
+                          <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button
+                              type="button"
+                              className="btn-luxury-outline"
+                              onClick={() => setShowAddCategory(false)}
+                            >
+                              إلغاء
+                            </button>
+                            <button type="button" className="btn-luxury" onClick={handleAddCategory}>
+                              حفظ الفئة
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                       <label className="form-label">{t.productDescAr}</label>
                       <textarea
@@ -839,7 +1110,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                     style={{
                       background: 'rgba(0,0,0,0.3)',
                       padding: '1.25rem',
-                      borderRadius: '12px',
+                      borderRadius: '0',
                       border: 'var(--border-dark-subtle)'
                     }}
                   >
@@ -877,7 +1148,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                               position: 'relative',
                               width: '90px',
                               height: '90px',
-                              borderRadius: '8px',
+                              borderRadius: '0',
                               overflow: 'hidden',
                               border: isCover ? '2px solid #D4AF37' : '1px solid rgba(255,255,255,0.2)',
                               boxShadow: isCover ? 'var(--gold-glow)' : 'none'
@@ -939,7 +1210,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                     style={{
                       background: 'rgba(0,0,0,0.4)',
                       padding: '1.25rem',
-                      borderRadius: '12px',
+                      borderRadius: '0',
                       border: 'var(--border-gold-subtle)'
                     }}
                   >
@@ -1083,14 +1354,27 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
               ) : (
                 /* Products Table & Add Button */
                 <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--beige-silk)' }}>
                       قائمة الأحذية والحقائب الفاخرة ({products.length})
                     </h3>
-                    <button type="button" className="btn-luxury" onClick={handleStartAddProduct}>
-                      <Plus size={16} />
-                      <span>{t.addProduct}</span>
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <button type="button" className="btn-luxury" onClick={handleStartAddProduct}>
+                        <Plus size={16} />
+                        <span>{t.addProduct}</span>
+                      </button>
+                      {products.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn-luxury-outline"
+                          style={{ color: '#E74C3C', borderColor: 'rgba(231,76,60,0.5)' }}
+                          onClick={handleDeleteAllProducts}
+                        >
+                          <Trash2 size={16} />
+                          <span>حذف جميع المنتجات</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem' }}>
@@ -1106,7 +1390,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                           key={prod.id}
                           style={{
                             background: 'var(--bg-card)',
-                            borderRadius: '12px',
+                            borderRadius: '0',
                             overflow: 'hidden',
                             border: '1px solid rgba(255,255,255,0.06)',
                             display: 'flex',
@@ -1129,7 +1413,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                                   color: '#fff',
                                   fontSize: '0.7rem',
                                   padding: '2px 8px',
-                                  borderRadius: '4px',
+                                  borderRadius: '0',
                                   fontWeight: '700'
                                 }}
                               >
@@ -1168,7 +1452,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                                   border: '1px solid rgba(231, 76, 60, 0.4)',
                                   color: '#E74C3C',
                                   padding: '0.45rem 0.75rem',
-                                  borderRadius: '8px',
+                                  borderRadius: '0',
                                   cursor: 'pointer'
                                 }}
                                 onClick={() => handleDeleteProduct(prod.id)}
@@ -1204,7 +1488,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                   </div>
 
                   {/* Upload Area */}
-                  <div style={{ background: 'rgba(212,175,55,0.05)', border: '1.5px dashed rgba(212,175,55,0.3)', padding: '1.5rem', borderRadius: '14px', textAlign: 'center' }}>
+                  <div style={{ background: 'rgba(212,175,55,0.05)', border: '1.5px dashed rgba(212,175,55,0.3)', padding: '1.5rem', borderRadius: '0', textAlign: 'center' }}>
                     <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block', fontSize: '0.9rem' }}>
                       📸 رفع صورة أو فيديو (يتم الرفع تلقائياً إلى Cloudinary)
                     </label>
@@ -1226,7 +1510,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                         border: '1px solid rgba(212,175,55,0.4)',
                         color: 'var(--gold-light)',
                         padding: '0.6rem 1.4rem',
-                        borderRadius: '8px',
+                        borderRadius: '0',
                         fontSize: '0.9rem',
                         fontWeight: '600',
                         transition: 'all 0.2s'
@@ -1237,25 +1521,25 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                     </label>
 
                     {editingSlide.media_url && (
-                      <div style={{ marginTop: '1rem', position: 'relative', borderRadius: '10px', overflow: 'hidden', maxHeight: '200px' }}>
+                      <div style={{ marginTop: '1rem', position: 'relative', borderRadius: '0', overflow: 'hidden', maxHeight: '200px' }}>
                         {editingSlide.media_type === 'video' ? (
                           <video
                             src={editingSlide.media_url}
                             controls
                             muted
-                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px' }}
+                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '0' }}
                           />
                         ) : (
                           <img
                             src={editingSlide.media_url}
                             alt="Slide preview"
-                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '10px' }}
+                            style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '0' }}
                           />
                         )}
                         <div style={{
                           position: 'absolute', bottom: '8px', left: '8px',
                           background: 'rgba(0,0,0,0.7)', color: '#fff',
-                          fontSize: '0.7rem', padding: '3px 8px', borderRadius: '4px'
+                          fontSize: '0.7rem', padding: '3px 8px', borderRadius: '0'
                         }}>
                           ✅ {editingSlide.media_type === 'video' ? 'فيديو جاهز' : 'صورة جاهزة'}
                         </div>
@@ -1285,7 +1569,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                         border: '1px solid var(--gold-dim)',
                         color: 'var(--gold-light)',
                         padding: '0.4rem 0.8rem',
-                        borderRadius: '8px',
+                        borderRadius: '0',
                         fontWeight: '700',
                         fontSize: '1rem'
                       }}>
@@ -1322,7 +1606,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                   </div>
 
                   {slides.length === 0 && (
-                    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', border: '1.5px dashed rgba(255,255,255,0.1)', borderRadius: '14px' }}>
+                    <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', border: '1.5px dashed rgba(255,255,255,0.1)', borderRadius: '0' }}>
                       <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>🖼</div>
                       <div>لا توجد شرائح بعد. أضف أول شريحة لشريط التمرير!</div>
                     </div>
@@ -1334,7 +1618,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                         key={s.id}
                         style={{
                           background: 'var(--bg-card)',
-                          borderRadius: '14px',
+                          borderRadius: '0',
                           overflow: 'hidden',
                           border: '1px solid rgba(255,255,255,0.08)',
                           transition: 'transform 0.2s, box-shadow 0.2s',
@@ -1361,7 +1645,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                             position: 'absolute', top: '8px', right: '8px',
                             background: s.media_type === 'video' ? 'rgba(231,76,60,0.85)' : 'rgba(39,174,96,0.85)',
                             color: '#fff', fontSize: '0.65rem',
-                            padding: '2px 7px', borderRadius: '5px', fontWeight: '700'
+                            padding: '2px 7px', borderRadius: '0', fontWeight: '700'
                           }}>
                             {s.media_type === 'video' ? '▶ فيديو' : '📷 صورة'}
                           </span>
@@ -1370,7 +1654,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                             position: 'absolute', top: '8px', left: '8px',
                             background: 'rgba(0,0,0,0.65)',
                             color: 'var(--gold-pure)', fontSize: '0.7rem',
-                            padding: '2px 7px', borderRadius: '5px', fontWeight: '700'
+                            padding: '2px 7px', borderRadius: '0', fontWeight: '700'
                           }}>
                             #{idx + 1}
                           </span>
@@ -1384,7 +1668,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                               background: 'rgba(212,175,55,0.12)',
                               border: '1px solid rgba(212,175,55,0.3)',
                               color: 'var(--gold-light)',
-                              padding: '2px 10px', borderRadius: '6px',
+                              padding: '2px 10px', borderRadius: '0',
                               fontSize: '0.8rem', fontWeight: '700'
                             }}>
                               ⏱ {s.duration || 5}s
@@ -1400,7 +1684,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                               border: '1px solid rgba(231, 76, 60, 0.35)',
                               color: '#E74C3C',
                               padding: '0.45rem 0',
-                              borderRadius: '8px',
+                              borderRadius: '0',
                               fontSize: '0.78rem',
                               fontWeight: '600',
                               cursor: 'pointer',
@@ -1441,7 +1725,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                       style={{
                         background: 'var(--bg-card)',
                         border: '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '12px',
+                        borderRadius: '0',
                         padding: '1.25rem',
                         display: 'grid',
                         gridTemplateColumns: '1.5fr 2fr 1fr 1fr',
@@ -1462,6 +1746,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                         </div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                           📍 {ord.customer_wilaya} - {ord.customer_address}
+                          {ord.delivery_fee ? `  •  🚚 توصيل: ${Number(ord.delivery_fee).toLocaleString()} دج` : ''}
                         </div>
                       </div>
 
@@ -1471,13 +1756,13 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                           {ord.product_title}
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
-                          <span style={{ background: 'rgba(212,175,55,0.15)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--gold-light)' }}>
+                          <span style={{ background: 'rgba(212,175,55,0.15)', padding: '2px 8px', borderRadius: '0', fontSize: '0.75rem', color: 'var(--gold-light)' }}>
                             اللون: <strong>{ord.selected_color}</strong>
                           </span>
-                          <span style={{ background: 'rgba(212,175,55,0.15)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--gold-light)' }}>
+                          <span style={{ background: 'rgba(212,175,55,0.15)', padding: '2px 8px', borderRadius: '0', fontSize: '0.75rem', color: 'var(--gold-light)' }}>
                             المقاس: <strong>{ord.selected_size}</strong>
                           </span>
-                          <span style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem' }}>
+                          <span style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '0', fontSize: '0.75rem' }}>
                             الكمية: <strong>{ord.quantity}</strong>
                           </span>
                         </div>
@@ -1515,11 +1800,11 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                             fontSize: '0.85rem'
                           }}
                         >
-                          <option value="pending">قيد الانتظار</option>
-                          <option value="confirmed">تم التأكيد</option>
+                          <option value="pending">قيد الإنجاز</option>
+                          <option value="confirmed">مؤكد</option>
                           <option value="shipped">تم الشحن</option>
-                          <option value="delivered">تم التوصيل</option>
-                          <option value="cancelled">ملغى</option>
+                          <option value="delivered">منجز</option>
+                          <option value="cancelled">ملغي</option>
                         </select>
                       </div>
                     </div>
@@ -1535,7 +1820,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
           {activeTab === 'settings' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {/* WhatsApp & Contact Phone */}
-              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '12px', border: 'var(--border-dark-subtle)' }}>
+              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '0', border: 'var(--border-dark-subtle)' }}>
                 <h4 style={{ color: 'var(--gold-light)', marginBottom: '1rem' }}>
                   معلومات التواصل ورقم WhatsApp للطلبات
                 </h4>
@@ -1568,7 +1853,7 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
               </div>
 
               {/* Announcement Bar & Delivery */}
-              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '12px', border: 'var(--border-dark-subtle)' }}>
+              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '0', border: 'var(--border-dark-subtle)' }}>
                 <h4 style={{ color: 'var(--gold-light)', marginBottom: '1rem' }}>
                   نص الشريط الإعلاني العلوي
                 </h4>
@@ -1584,65 +1869,159 @@ export default function AdminDashboard({ onClose, onDataUpdated }) {
                 </div>
               </div>
 
-              {/* CHANGE ADMIN PIN / PASSWORD */}
-              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '12px', border: 'var(--border-gold-subtle)' }}>
+              {/* Wilayas / States Management */}
+              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '0', border: 'var(--border-dark-subtle)' }}>
+                <h4 style={{ color: 'var(--gold-light)', marginBottom: '0.4rem' }}>
+                  الولايات وتسعير التوصيل
+                </h4>
+                <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                  أضف الولايات وحدد سعر التوصيل لكل ولاية. يظهر السعر للزبون تلقائياً عند اختيار ولايته.
+                </p>
+
+                {/* Add row */}
+                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="اسم الولاية (مثال: الجزائر)"
+                    value={newWilayaName}
+                    onChange={(e) => setNewWilayaName(e.target.value)}
+                    style={{ flex: '1 1 200px' }}
+                  />
+                  <input
+                    type="number"
+                    className="form-input"
+                    placeholder="سعر التوصيل (دج)"
+                    value={newWilayaFee}
+                    onChange={(e) => setNewWilayaFee(e.target.value)}
+                    style={{ width: '150px' }}
+                  />
+                  <button type="button" className="btn-luxury" onClick={handleAddWilaya}>
+                    <Plus size={16} />
+                    <span>إضافة ولاية</span>
+                  </button>
+                </div>
+
+                {/* List */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.6rem' }}>
+                  {getWilayas().length === 0 && (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      لا توجد ولايات بعد — أضف ولاية لتبدأ.
+                    </span>
+                  )}
+                  {getWilayas().map((w) => (
+                    <div
+                      key={w.name}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        padding: '0.5rem 0.7rem',
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid rgba(255,255,255,0.06)'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.85rem', color: 'var(--beige-silk)' }}>{w.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <input
+                          type="number"
+                          className="form-input"
+                          value={w.delivery_fee}
+                          onChange={(e) => handleWilayaFeeChange(w.name, e.target.value)}
+                          style={{ width: '90px', padding: '0.3rem 0.5rem', fontSize: '0.8rem' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveWilaya(w.name)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#E74C3C',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}
+                          aria-label={`حذف ${w.name}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* CHANGE ADMIN CREDENTIALS (username + password) */}
+              <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '0', border: 'var(--border-gold-subtle)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
                   <Shield size={20} color="#D4AF37" />
                   <h4 style={{ color: 'var(--gold-light)' }}>
-                    تغيير رمز مرور الإدارة (Admin PIN / Password)
+                    تغيير بيانات دخول الإدارة (اسم المستخدم وكلمة المرور)
                   </h4>
                 </div>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-                  يمكنك تغيير الرمز السري الذي تستخدمه للدخول إلى لوحة التحكم في أي وقت.
+                  يمكنك تغيير اسم المستخدم وكلمة المرور اللذين تستخدمهما للدخول إلى لوحة التحكم في أي وقت.
                 </p>
 
-                <form onSubmit={handleChangePin} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'end' }}>
+                <form onSubmit={handleChangeCredentials} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'end' }}>
                   <div className="form-group">
-                    <label className="form-label">الرمز الحالي</label>
+                    <label className="form-label">كلمة المرور الحالية</label>
                     <input
                       type="password"
                       className="form-input"
-                      placeholder="الرمز الحالي..."
-                      value={currentPinInput}
-                      onChange={(e) => setCurrentPinInput(e.target.value)}
+                      placeholder="كلمة المرور الحالية..."
+                      value={curPassInput}
+                      onChange={(e) => setCurPassInput(e.target.value)}
                       required
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">الرمز الجديد (4 أرقام أو أحرف فأكثر)</label>
+                    <label className="form-label">اسم المستخدم الجديد (اختياري)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="اتركه فارغاً لعدم التغيير"
+                      value={newUserInput}
+                      onChange={(e) => setNewUserInput(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">كلمة المرور الجديدة (4 خانات فأكثر)</label>
                     <input
                       type="password"
                       className="form-input"
-                      placeholder="الرمز الجديد..."
-                      value={newPinInput}
-                      onChange={(e) => setNewPinInput(e.target.value)}
+                      placeholder="كلمة المرور الجديدة..."
+                      value={newPassInput}
+                      onChange={(e) => setNewPassInput(e.target.value)}
                       required
                     />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">تأكيد الرمز الجديد</label>
+                    <label className="form-label">تأكيد كلمة المرور الجديدة</label>
                     <input
                       type="password"
                       className="form-input"
-                      placeholder="أعد كتابة الرمز..."
-                      value={confirmPinInput}
-                      onChange={(e) => setConfirmPinInput(e.target.value)}
+                      placeholder="أعد كتابة كلمة المرور..."
+                      value={confirmPassInput}
+                      onChange={(e) => setConfirmPassInput(e.target.value)}
                       required
                     />
                   </div>
 
                   <div>
                     <button type="submit" className="btn-luxury-outline" style={{ width: '100%', padding: '0.7rem' }}>
-                      <span>تحديث رمز المرور</span>
+                      <span>تحديث بيانات الدخول</span>
                     </button>
                   </div>
                 </form>
 
-                {pinChangeMsg && (
-                  <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: pinChangeMsg.includes('✅') ? '#2ECC71' : '#E74C3C', fontWeight: '700' }}>
-                    {pinChangeMsg}
+                {credChangeMsg && (
+                  <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: credChangeMsg.includes('✅') ? '#2ECC71' : '#E74C3C', fontWeight: '700' }}>
+                    {credChangeMsg}
                   </div>
                 )}
               </div>

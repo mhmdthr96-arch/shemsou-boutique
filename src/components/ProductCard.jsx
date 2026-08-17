@@ -1,5 +1,6 @@
 import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
+import { optimizeMediaUrl } from '../lib/cloudinary';
 import { ShoppingBag, Eye, Sparkles } from 'lucide-react';
 
 export default function ProductCard({ product, onOpenOrder }) {
@@ -21,9 +22,10 @@ export default function ProductCard({ product, onOpenOrder }) {
     (product.variants && product.variants.length > 0 && totalStock === 0) ||
     product.in_stock === false;
 
-  const coverImage =
+  const rawCover =
     product.cover_image ||
     (product.images && product.images.length > 0 ? product.images[0] : '');
+  const coverImage = optimizeMediaUrl(rawCover);
 
   return (
     <div className="product-card">

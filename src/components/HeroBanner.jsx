@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Crown, Sparkles, ShieldCheck, Truck, ArrowRight, ArrowLeft } from 'lucide-react';
 
@@ -57,7 +57,7 @@ export default function HeroBanner({ onExploreClick }) {
                 background: 'rgba(15, 15, 15, 0.85)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(212, 175, 55, 0.3)',
-                borderRadius: '12px',
+                borderRadius: '0',
                 padding: '1rem',
                 display: 'flex',
                 alignItems: 'center',
